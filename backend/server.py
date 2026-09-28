@@ -355,19 +355,17 @@ async def sse_stream(chat: LlmChat, prompt: str, on_done=None):
         logger.error(f"LLM error: {e}")
         yield f"data: {json.dumps({'delta': ''})}\n\n"
 
-    yield "data: [DONE]\n\n"
+        yield "data: [DONE]\n\n"
 
-        if on_done:
+    if on_done:
         try:
             await on_done("".join(full))
         except Exception as e:
             logger.error(f"Chat history store failed: {e}")
 
-
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
-class ImproveInput(BaseModel):
 class ImproveInput(BaseModel):
     field: str
     text: str = ""
@@ -442,28 +440,7 @@ async def public_chat(input: ChatInput):
             {
                 "session_id": input.session_id,
                 "role": "assistant",
-                "content": answer,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-
-    return StreamingResponse(sse_stream(chat, prompt, on_done=store), media_type="text/event-stream", headers=SSE_HEADERS)
-
-
-# ---------- Misc ----------
-@api_router.get("/")
-async def root():
-    return {"message": "Exauce Baleke — Acteur & Scenariste API"}
-
-
-SEED_SCENARIOS = [
-    {
-        "id": str(uuid.uuid4()),
-        "title": "Les Cendres du Kivu",
-        "genre": "Drame historique",
-        "format": "Long metrage - 105 min",
-        "status": "En developpement",
-        "pitch": "Apres l'eruption du Nyiragongo, un jeune guide doit choisir entre sauver sa famille ou les archives cachees qui pourraient faire trembler toute la region.",
+                "content": answer,"synopsis": "Goma, quelques jours apres l'eruption. Faustin, guide de volcan au chomage, decouvre dans les decombres de la maison familiale une mallette d'archives appartenant a son pere, ancien notaire. Ces documents compromettent de puissants notables de la region. Traque, il traverse la ville en reconstruction pour rejoindre sa femme et sa fille refugiees a Sake, tandis que la lave figee porte encore la chaleur des secrets qu'elle a reveles. Un choix s'impose : detruire la mallette et vivre, ou la livrer et risquer tout.",
         "synopsis": "Goma, quelques jours apres l'eruption. Faustin, guide de volcan au chomage, decouvre dans les decombres de la maison familiale une mallette d'archives appartenant a son pere, ancien notaire. Ces documents compromettent de puissants notables de la region. Traque, il traverse la ville en reconstruction pour rejoindre sa femme et sa fille refugiees a Sake, tandis que la lave figee porte encore la chaleur des secrets qu'elle a reveles. Un choix s'impose : detruire la mallette et vivre, ou la livrer et risquer tout.",
         "note_intention": "Filmer Goma comme un personnage : la lave noire, la poussiere, la lumiere rasante du matin. Un recit de transmission ou la memoire d'un pere devient l'arme d'un fils.",
         "poster": MOOD_1,
