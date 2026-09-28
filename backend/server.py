@@ -11,7 +11,7 @@ import bcrypt
 import jwt
 import requests
 import json
-from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -346,15 +346,21 @@ async def sse_stream(chat: LlmChat, prompt: str, on_done=None):
     full: List[str] = []
     try:
         async for ev in chat.stream_message(UserMessage(text=prompt)):
-            if isinstance(ev, TextDelta):
-                full.append(ev.content)
-                yield f"data: {json.dumps({'delta': ev.content})}\n\n"
-            elif isinstance(ev, StreamDone):
+            if getattr(ev, "type", None) == "text_delta":
+                content = getattr(ev, "content", "")
+                if content:
+                    full.append(content)
+                    yield f"data: {json.dumps({'delta': content})}\n\n"
+
+            elif getattr(ev, "type", None) == "stream_done":
                 break
+
     except Exception as e:
         logger.error(f"LLM stream error: {e}")
         yield f"data: {json.dumps({'delta': ''})}\n\n"
+
     yield "data: [DONE]\n\n"
+
     if on_done:
         try:
             await on_done("".join(full))
