@@ -357,12 +357,17 @@ async def sse_stream(chat: LlmChat, prompt: str, on_done=None):
 
     yield "data: [DONE]\n\n"
 
-    if on_done:
+        if on_done:
         try:
             await on_done("".join(full))
         except Exception as e:
             logger.error(f"Chat history store failed: {e}")
 
+
+SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+
+class ImproveInput(BaseModel):
 class ImproveInput(BaseModel):
     field: str
     text: str = ""
