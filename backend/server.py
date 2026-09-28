@@ -344,19 +344,15 @@ def make_chat(session_id: str, system_message: str) -> LlmChat:
 
 async def sse_stream(chat: LlmChat, prompt: str, on_done=None):
     full: List[str] = []
-    try:
-        async for ev in chat.stream_message(UserMessage(text=prompt)):
-            if getattr(ev, "type", None) == "text_delta":
-                content = getattr(ev, "content", "")
-                if content:
-                    full.append(content)
-                    yield f"data: {json.dumps({'delta': content})}\n\n"
 
-            elif getattr(ev, "type", None) == "stream_done":
-                break
+    try:
+        answer = await chat.send_message(UserMessage(text=prompt))
+        full.append(answer)
+
+        yield f"data: {json.dumps({'delta': answer})}\n\n"
 
     except Exception as e:
-        logger.error(f"LLM stream error: {e}")
+        logger.error(f"LLM error: {e}")
         yield f"data: {json.dumps({'delta': ''})}\n\n"
 
     yield "data: [DONE]\n\n"
@@ -366,10 +362,6 @@ async def sse_stream(chat: LlmChat, prompt: str, on_done=None):
             await on_done("".join(full))
         except Exception as e:
             logger.error(f"Chat history store failed: {e}")
-
-
-SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-
 
 class ImproveInput(BaseModel):
     field: str
