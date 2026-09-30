@@ -381,6 +381,7 @@ async def sse_stream(system_message: str, prompt: str, on_done=None):
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
+
 class ImproveInput(BaseModel):
     field: str
     text: str = ""
@@ -399,7 +400,7 @@ async def ai_improve(input: ImproveInput, user: dict = Depends(get_current_user)
         prompt = f"Projet : {input.title or 'sans titre'}\nType de texte : {label}\n\nTexte a ameliorer :\n{input.text}"
     else:
         prompt = f"Ecris un(e) {label} percutant(e) pour le projet « {input.title or 'sans titre'} »."
-    chat = return StreamingResponse(sse_stream(system, prompt), media_type="text/event-stream", headers=SSE_HEADERS)
+    return StreamingResponse(sse_stream(system, prompt), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 class ChatInput(BaseModel):
@@ -447,7 +448,6 @@ async def public_chat(input: ChatInput):
         ("Visiteur : " if m["role"] == "user" else "Assistant : ") + m["content"] for m in history
     )
     prompt = f"{hist_txt}\nAssistant :" if hist_txt else input.message
-    return StreamingResponse(sse_stream(system, prompt, on_done=store), media_type="text/event-stream", headers=SSE_HEADERS)
 
     async def store(answer: str):
         await db.chat_messages.insert_one(
@@ -459,7 +459,8 @@ async def public_chat(input: ChatInput):
             }
         )
 
-    return StreamingResponse(sse_stream(chat, prompt, on_done=store), media_type="text/event-stream", headers=SSE_HEADERS)
+    return StreamingResponse(sse_stream(system, prompt, on_done=store), media_type="text/event-stream", headers=SSE_HEADERS)
+
 
 
 # ---------- Misc ----------
