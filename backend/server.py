@@ -357,34 +357,33 @@ async def download_file(path: str):
 
 async def sse_stream(system_message: str, prompt: str, on_done=None):
     full_text = ""
-    # Modèles officiels ordonnés du plus récent au plus rapide/léger
-    models_to_try = [
-        "gemini-3.8-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-8b",  # Version ultra-rapide / Lite
-        "gemini-1.5-pro"
-    ]
+    # Modèles 3.x valides à tester
+    models_to_try = ["gemini-3.8-flash", "gemini-3.7-flash"]
 
     for model_name in models_to_try:
-        try:
-            response = genai_client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_message,
-                ),
-            )
-            full_text = response.text or ""
-            if full_text:
-                break  # Succès, on quitte la boucle
-        except Exception as e:
-            logger.warning(f"Modèle {model_name} indisponible ({e}), tentative avec le suivant...")
-            continue
+        for attempt in range(2):  # 2 essais max par modèle
+            try:
+                response = genai_client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_message,
+                    ),
+                )
+                full_text = response.text or ""
+                if full_text:
+                    break  # Succès !
+            except Exception as e:
+                logger.warning(f"Tentative {attempt + 1} sur {model_name} a échoué: {e}")
+                if attempt < 1:
+                    await asyncio.sleep(1.5)  # Petite pause avant de réessayer
+        if full_text:
+            break  # Si on a obtenu une réponse, on sort de la boucle des modèles
 
     if full_text:
         yield f"data: {json.dumps({'delta': full_text})}\n\n"
     else:
-        logger.error("Tous les modèles Gemini ont échoué.")
+        logger.error("Aucun modèle Gemini 3.x n'a pu répondre.")
         yield f"data: {json.dumps({'delta': ''})}\n\n"
 
     yield "data: [DONE]\n\n"
@@ -393,6 +392,7 @@ async def sse_stream(system_message: str, prompt: str, on_done=None):
             await on_done(full_text)
         except Exception as e:
             logger.error(f"Chat history store failed: {e}")
+
 
 
 
