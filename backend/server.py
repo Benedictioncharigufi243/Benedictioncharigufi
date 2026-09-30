@@ -357,26 +357,43 @@ async def download_file(path: str):
 
 async def sse_stream(system_message: str, prompt: str, on_done=None):
     full_text = ""
-    try:
-        response = genai_client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_message,
-            ),
-        )
-        full_text = response.text or ""
+    # Modèles officiels ordonnés du plus récent au plus rapide/léger
+    models_to_try = [
+        "gemini-3.8-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",  # Version ultra-rapide / Lite
+        "gemini-1.5-pro"
+    ]
+
+    for model_name in models_to_try:
+        try:
+            response = genai_client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_message,
+                ),
+            )
+            full_text = response.text or ""
+            if full_text:
+                break  # Succès, on quitte la boucle
+        except Exception as e:
+            logger.warning(f"Modèle {model_name} indisponible ({e}), tentative avec le suivant...")
+            continue
+
+    if full_text:
         yield f"data: {json.dumps({'delta': full_text})}\n\n"
-    except Exception as e:
-        logger.error(f"Gemini LLM error: {e}")
+    else:
+        logger.error("Tous les modèles Gemini ont échoué.")
         yield f"data: {json.dumps({'delta': ''})}\n\n"
 
     yield "data: [DONE]\n\n"
-    if on_done:
+    if on_done and full_text:
         try:
             await on_done(full_text)
         except Exception as e:
             logger.error(f"Chat history store failed: {e}")
+
 
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
