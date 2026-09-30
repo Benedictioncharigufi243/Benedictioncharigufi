@@ -23,6 +23,15 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
 app = FastAPI()
+@app.middleware("http")
+async def debug_cors(request, call_next):
+    if request.method == "OPTIONS":
+        print("CORS DEBUG - Origin:", request.headers.get("origin"))
+        print("CORS DEBUG - Method:", request.headers.get("access-control-request-method"))
+        print("CORS DEBUG - Headers:", request.headers.get("access-control-request-headers"))
+
+    response = await call_next(request)
+    return response
 
 from fastapi.middleware.cors import CORSMiddleware
 
