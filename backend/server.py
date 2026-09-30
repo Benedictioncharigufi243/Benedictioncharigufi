@@ -11,7 +11,10 @@ import bcrypt
 import jwt
 import requests
 import json
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from google import genai
+from google.genai import types
+
+genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -350,40 +353,33 @@ async def download_file(path: str):
     return Response(content=data, media_type=record.get("content_type") or content_type)
 
 
-# ---------- AI (GPT 5.4 Mini) ----------
-LLM_PROVIDER, LLM_MODEL = "openai", "gpt-5.4-mini"
+# ---------- AI (Gemini) ----------
 
-
-def make_chat(session_id: str, system_message: str) -> LlmChat:
-    return LlmChat(
-        api_key=os.environ["EMERGENT_LLM_KEY"],
-        session_id=session_id,
-        system_message=system_message,
-    ).with_model(LLM_PROVIDER, LLM_MODEL)
-
-
-async def sse_stream(chat: LlmChat, prompt: str, on_done=None):
-    # The currently published Python SDK exposes send_message(), while the old
-    # project dependency expected a streaming API. We keep the SSE contract for
-    # the frontend by sending the completed response as one delta.
-    full: List[str] = []
+async def sse_stream(system_message: str, prompt: str, on_done=None):
+    full_text = ""
     try:
-        result = await chat.send_message(UserMessage(text=prompt))
-        full.append(result or "")
-        yield f"data: {json.dumps({'delta': result or ''})}\n\n"
+        response = genai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_message,
+            ),
+        )
+        full_text = response.text or ""
+        yield f"data: {json.dumps({'delta': full_text})}\n\n"
     except Exception as e:
-        logger.error(f"LLM stream error: {e}")
+        logger.error(f"Gemini LLM error: {e}")
         yield f"data: {json.dumps({'delta': ''})}\n\n"
+
     yield "data: [DONE]\n\n"
     if on_done:
         try:
-            await on_done("".join(full))
+            await on_done(full_text)
         except Exception as e:
             logger.error(f"Chat history store failed: {e}")
 
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-
 
 class ImproveInput(BaseModel):
     field: str
@@ -403,8 +399,7 @@ async def ai_improve(input: ImproveInput, user: dict = Depends(get_current_user)
         prompt = f"Projet : {input.title or 'sans titre'}\nType de texte : {label}\n\nTexte a ameliorer :\n{input.text}"
     else:
         prompt = f"Ecris un(e) {label} percutant(e) pour le projet « {input.title or 'sans titre'} »."
-    chat = make_chat(f"improve-{user['_id']}-{uuid.uuid4()}", system)
-    return StreamingResponse(sse_stream(chat, prompt), media_type="text/event-stream", headers=SSE_HEADERS)
+    chat = return StreamingResponse(sse_stream(system, prompt), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 class ChatInput(BaseModel):
@@ -452,7 +447,7 @@ async def public_chat(input: ChatInput):
         ("Visiteur : " if m["role"] == "user" else "Assistant : ") + m["content"] for m in history
     )
     prompt = f"{hist_txt}\nAssistant :" if hist_txt else input.message
-    chat = make_chat(f"visitor-{input.session_id}-{uuid.uuid4()}", system)
+    return StreamingResponse(sse_stream(system, prompt, on_done=store), media_type="text/event-stream", headers=SSE_HEADERS)
 
     async def store(answer: str):
         await db.chat_messages.insert_one(
