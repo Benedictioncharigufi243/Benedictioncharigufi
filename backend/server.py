@@ -28,7 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 origins = [
     "http://localhost:3000",
-    "https://benedictioncharigufi-frontend.vercel.app",
+    "https://benedictioncharigufi-ee9f-jo1ijclzt-benedictioncharigufi.vercel.app",
 ]
 
 app.add_middleware(
