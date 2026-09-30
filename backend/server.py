@@ -23,30 +23,25 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
 app = FastAPI()
-@app.middleware("http")
-async def debug_cors(request, call_next):
-    if request.method == "OPTIONS":
-        print("CORS DEBUG - Origin:", request.headers.get("origin"))
-        print("CORS DEBUG - Method:", request.headers.get("access-control-request-method"))
-        print("CORS DEBUG - Headers:", request.headers.get("access-control-request-headers"))
-
-    response = await call_next(request)
-    return response
 
 from fastapi.middleware.cors import CORSMiddleware
 
 origins = [
     "http://localhost:3000",
+    "http://localhost:5173",
+    "https://benedictioncharigufi-frontend.vercel.app",
     "https://benedictioncharigufi-ee9f-jo1ijclzt-benedictioncharigufi.vercel.app",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 api_router = APIRouter(prefix="/api")
 
