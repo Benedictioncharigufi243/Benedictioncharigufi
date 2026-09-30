@@ -538,8 +538,8 @@ SEED_SCENARIOS = [
 
 
 async def seed_admin():
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+    admin_email = os.environ.get("ADMIN_EMAIL", "benedictioncharigufi@gmail.com").lower()
+    admin_password = os.environ.get("ADMIN_PASSWORD", "258036Ab")
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
         await db.users.insert_one({
@@ -573,14 +573,7 @@ async def startup():
 
 app.include_router(api_router)
 
-_origins = [o for o in [os.environ.get("FRONTEND_URL"), "http://localhost:3000"] if o]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
 
 
 @app.on_event("shutdown")
