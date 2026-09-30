@@ -359,7 +359,7 @@ async def sse_stream(system_message: str, prompt: str, on_done=None):
     full_text = ""
     try:
         response = genai_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_message,
