@@ -4,7 +4,7 @@ import { waLink } from "@/lib/api";
 
 export const Footer = () => {
   const content = useContent();
-  const name = content?.name || "Exaucé Baleke";
+  const name = content?.name || "benediction charigufi";
   const links = content?.links || {};
   const year = new Date().getFullYear();
 
