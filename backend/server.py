@@ -223,7 +223,7 @@ MOOD_2 = "https://images.unsplash.com/photo-1728022038090-8ab88f8339bf?crop=entr
 MOOD_3 = "https://images.unsplash.com/photo-1632187981988-40f3cbaeef5e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHw0fHxmaWxtJTIwc2V0JTIwYmVoaW5kJTIwc2NlbmVzJTIwZGFya3xlbnwwfHx8fDE3OTA1NzU3NjR8MA&ixlib=rb-4.1.0&q=85"
 
 DEFAULT_CONTENT: Dict[str, Any] = {
-    "name": "Exauce Baleke",
+    "name": "benediction Charigufi",
     "role_line": "Acteur - Scenariste",
     "location_line": "Goma - Kinshasa, RDC",
     "intro": "Du theatre de rue de Goma aux plateaux de Kinshasa, je construis des personnages avec le corps, la voix et la memoire de ceux qui m'ont precede.",
