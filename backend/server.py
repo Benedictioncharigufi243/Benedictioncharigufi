@@ -359,7 +359,7 @@ async def download_file(path: str):
 async def sse_stream(system_message: str, prompt: str, on_done=None):
     full_text = ""
     # Modèles 3.x valides à tester
-    models_to_try = ["gemini-3.7-flash", "gemini-3.8-flash"]
+    models_to_try = ["gemini-3.8-flash", "gemini-3.7-flash",gemini-1.5-flash",gemini-3.6-flash",gemini-3.5-flash"]
 
     for model_name in models_to_try:
         for attempt in range(2):  # 2 essais max par modèle
