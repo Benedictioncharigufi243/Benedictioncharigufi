@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { LogOut, Pencil, Plus, Trash2 } from "lucide-react";
-import { api, imgSrc } from "@/lib/api";
+import { api, cachedGet, imgSrc } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useContent } from "@/hooks/useContent";
 import { Monogram } from "@/components/Nav";
@@ -94,16 +94,18 @@ const TabButton = ({ active, onClick, children, testId }) => (
 );
 
 export default function Admin() {
-  const { user, logout } = useAuth();
+  const { user, logout, ensure } = useAuth();
+  useEffect(() => {
+    ensure();
+  }, [ensure]);
   const content = useContent();
   const [tab, setTab] = useState("acting");
   const [scenarios, setScenarios] = useState([]);
   const [editing, setEditing] = useState(null);
 
   const loadScenarios = () =>
-    api
-      .get("/scenarios")
-      .then((r) => setScenarios(r.data))
+    cachedGet("/scenarios", 0)
+      .then((d) => setScenarios(d))
       .catch(() => {});
 
   useEffect(() => {
@@ -179,7 +181,7 @@ export default function Admin() {
                     className="flex items-center gap-5 border border-white/10 bg-coal p-4"
                   >
                     {s.poster ? (
-                      <img src={imgSrc(s.poster)} alt="" className="w-14 h-14 object-cover border border-white/10 shrink-0" />
+                      <img src={imgSrc(s.poster, 200)} alt="" loading="lazy" decoding="async" className="w-14 h-14 object-cover border border-white/10 shrink-0" />
                     ) : (
                       <div className="w-14 h-14 border border-dashed border-white/15 shrink-0" />
                     )}

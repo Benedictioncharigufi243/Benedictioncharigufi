@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, FileText, ExternalLink } from "lucide-react";
 import { LineReveal, FadeUp } from "@/components/Reveal";
-import { api, imgSrc, waLink } from "@/lib/api";
+import { cachedGet, imgSrc, waLink } from "@/lib/api";
 import { useContent } from "@/hooks/useContent";
 
 const Chip = ({ children }) => (
@@ -20,9 +20,10 @@ const ProjectCard = ({ p, index, onOpen }) => (
     >
       <div className="relative aspect-[4/5] overflow-hidden">
         <img
-          src={imgSrc(p.poster)}
+          src={imgSrc(p.poster, 600)}
           alt={p.title}
           loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover grayscale-[35%] group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
@@ -81,7 +82,7 @@ const ProjectModal = ({ p, whatsapp, onClose }) => {
           <X size={16} />
         </button>
         <div className="relative min-h-[240px]">
-          <img src={imgSrc(p.poster)} alt={p.title} className="absolute inset-0 w-full h-full object-cover" />
+          <img src={imgSrc(p.poster, 1200)} alt={p.title} decoding="async" className="absolute inset-0 w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-r from-transparent to-coal/60 hidden md:block" />
         </div>
         <div className="p-8 lg:p-10">
@@ -121,7 +122,8 @@ const ProjectModal = ({ p, whatsapp, onClose }) => {
                 {p.images.map((img, i) => (
                   <img
                     key={i}
-                    src={imgSrc(img)}
+                    src={imgSrc(img, 500)}
+                    decoding="async"
                     alt=""
                     loading="lazy"
                     data-testid={`scenario-moodboard-${i}`}
@@ -165,9 +167,8 @@ export default function Scenarios() {
   const content = useContent();
 
   useEffect(() => {
-    api
-      .get("/scenarios")
-      .then((r) => setProjects(r.data))
+    cachedGet("/scenarios")
+      .then((d) => setProjects(d))
       .catch(() => setProjects([]));
   }, []);
 

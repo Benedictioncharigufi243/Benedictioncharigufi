@@ -4,7 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { LineReveal, FadeUp, PageLoader } from "@/components/Reveal";
 import { Marquee } from "@/components/Marquee";
 import { useContent } from "@/hooks/useContent";
-import { imgSrc } from "@/lib/api";
+import { imgSrc, imgSet } from "@/lib/api";
 
 const Panel = ({ title, sub, cta, to, image, delay, testId, parallax = 90 }) => {
   const { scrollY } = useScroll();
@@ -16,7 +16,11 @@ const Panel = ({ title, sub, cta, to, image, delay, testId, parallax = 90 }) => 
       className="group relative flex-1 hover:flex-[1.4] transition-[flex] duration-700 ease-out overflow-hidden min-h-[50svh] block"
     >
       <motion.img
-        src={imgSrc(image)}
+        src={imgSrc(image, 1600)}
+        srcSet={imgSet(image, [800, 1200, 1600])}
+        sizes="(min-width: 1024px) 50vw, 100vw"
+        fetchPriority="high"
+        decoding="async"
         alt={title}
         style={{ y }}
         initial={{ scale: 1.18 }}

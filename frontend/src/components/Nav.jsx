@@ -30,7 +30,7 @@ export const Nav = () => {
   const [open, setOpen] = useState(false);
   const content = useContent();
   const location = useLocation();
-  const name = content?.name || "benediction Charigufi";
+  const name = content?.name || "Exaucé Baleke";
   const initials = name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const whatsapp = content?.links?.whatsapp;
 

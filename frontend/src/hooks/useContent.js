@@ -1,17 +1,23 @@
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { cachedGet, peekCache } from "@/lib/api";
 
-export function useContent() {
-  const [content, setContent] = useState(null);
+const EMPTY_OBJ = {};
+const EMPTY_LIST = [];
+
+export function useResource(path, fallback) {
+  // Valeur deja en cache = affichage immediat, puis revalidation silencieuse.
+  const [data, setData] = useState(() => peekCache(path));
   useEffect(() => {
     let on = true;
-    api
-      .get("/content")
-      .then((r) => on && setContent(r.data))
-      .catch(() => on && setContent({}));
+    cachedGet(path)
+      .then((d) => on && setData(d))
+      .catch(() => on && setData((p) => p ?? fallback));
     return () => {
       on = false;
     };
-  }, []);
-  return content;
+  }, [path, fallback]);
+  return data;
 }
+
+export const useContent = () => useResource("/content", EMPTY_OBJ);
+export const useScenarios = () => useResource("/scenarios", EMPTY_LIST);

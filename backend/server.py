@@ -3,8 +3,11 @@ load_dotenv()
 
 import logging
 import os
+import hashlib
+import io
+import time
 import uuid
-import asyncio
+from collections import OrderedDict, defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
@@ -12,14 +15,14 @@ import bcrypt
 import jwt
 import requests
 import json
-from google import genai
-from google.genai import types
-
-genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from PIL import Image, ImageOps
+from starlette.concurrency import run_in_threadpool
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.cors import CORSMiddleware
 
 mongo_url = os.environ["MONGO_URL"]
@@ -27,25 +30,6 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
 app = FastAPI()
-
-from fastapi.middleware.cors import CORSMiddleware
-
-origins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://benedictioncharigufi-frontend.vercel.app", "benedictioncharigufi-ee9f.vercel.app", "https://benedictioncharigufi-ee9f-jo1ijclzt-benedictioncharigufi.vercel.app",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 api_router = APIRouter(prefix="/api")
 
 JWT_ALGORITHM = "HS256"
@@ -87,6 +71,51 @@ def get_object(path: str):
     resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
     resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+# ---------- Cache, limites, ETag ----------
+_CACHE: Dict[str, Any] = {}
+CACHE_TTL = 60
+HTTP_CC = "public, max-age=0, must-revalidate"
+
+
+def _cache_get(key: str):
+    hit = _CACHE.get(key)
+    return hit[1] if hit and time.time() - hit[0] < CACHE_TTL else None
+
+
+def _cache_set(key: str, value):
+    _CACHE[key] = (time.time(), value)
+    return value
+
+
+def _conditional_json(request: Request, response: Response, payload):
+    """ETag : le navigateur recoit un 304 vide si rien n'a change."""
+    body = json.dumps(payload, sort_keys=True, default=str)
+    etag = '"' + hashlib.md5(body.encode()).hexdigest() + '"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": HTTP_CC})
+    response.headers["ETag"] = etag
+    response.headers["Cache-Control"] = HTTP_CC
+    return payload
+
+
+_RATE: Dict[str, deque] = defaultdict(deque)
+
+
+def rate_limit(request: Request, bucket: str, limit: int, window: int):
+    fwd = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    ip = fwd or (request.client.host if request.client else "?")
+    now = time.time()
+    q = _RATE[f"{bucket}:{ip}"]
+    while q and now - q[0] > window:
+        q.popleft()
+    if len(q) >= limit:
+        raise HTTPException(status_code=429, detail="Trop de messages, reessayez dans quelques minutes.")
+    q.append(now)
+    if len(_RATE) > 5000:
+        for k in [k for k, v in _RATE.items() if not v]:
+            _RATE.pop(k, None)
 
 
 # ---------- Auth ----------
@@ -222,7 +251,7 @@ MOOD_2 = "https://images.unsplash.com/photo-1728022038090-8ab88f8339bf?crop=entr
 MOOD_3 = "https://images.unsplash.com/photo-1632187981988-40f3cbaeef5e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHw0fHxmaWxtJTIwc2V0JTIwYmVoaW5kJTIwc2NlbmVzJTIwZGFya3xlbnwwfHx8fDE3OTA1NzU3NjR8MA&ixlib=rb-4.1.0&q=85"
 
 DEFAULT_CONTENT: Dict[str, Any] = {
-    "name": "benediction Charigufi",
+    "name": "Exauce Baleke",
     "role_line": "Acteur - Scenariste",
     "location_line": "Goma - Kinshasa, RDC",
     "intro": "Du theatre de rue de Goma aux plateaux de Kinshasa, je construis des personnages avec le corps, la voix et la memoire de ceux qui m'ont precede.",
@@ -259,11 +288,26 @@ class ContentUpdate(BaseModel):
     data: Dict[str, Any]
 
 
-@api_router.get("/content")
 async def get_content():
+    cached = _cache_get("content")
+    if cached is not None:
+        return cached
     doc = await db.content.find_one({"key": "main"})
     data = doc.get("data", {}) if doc else {}
-    return {**DEFAULT_CONTENT, **data}
+    return _cache_set("content", {**DEFAULT_CONTENT, **data})
+
+
+async def get_scenarios():
+    cached = _cache_get("scenarios")
+    if cached is not None:
+        return cached
+    rows = await db.scenarios.find({}, {"_id": 0}).sort([("order", 1), ("created_at", 1)]).to_list(200)
+    return _cache_set("scenarios", rows)
+
+
+@api_router.get("/content")
+async def content_endpoint(request: Request, response: Response):
+    return _conditional_json(request, response, await get_content())
 
 
 @api_router.put("/content")
@@ -273,6 +317,7 @@ async def update_content(update: ContentUpdate, user: dict = Depends(get_current
         {"$set": {"data": update.data, "updated_at": datetime.now(timezone.utc).isoformat()}},
         upsert=True,
     )
+    _CACHE.clear()
     return {"ok": True}
 
 
@@ -292,8 +337,8 @@ class ScenarioIn(BaseModel):
 
 
 @api_router.get("/scenarios")
-async def list_scenarios():
-    return await db.scenarios.find({}, {"_id": 0}).sort([("order", 1), ("created_at", 1)]).to_list(200)
+async def list_scenarios(request: Request, response: Response):
+    return _conditional_json(request, response, await get_scenarios())
 
 
 @api_router.post("/scenarios", status_code=201)
@@ -302,6 +347,7 @@ async def create_scenario(input: ScenarioIn, user: dict = Depends(get_current_us
     doc["id"] = str(uuid.uuid4())
     doc["created_at"] = datetime.now(timezone.utc).isoformat()
     await db.scenarios.insert_one(doc)
+    _CACHE.pop("scenarios", None)
     doc.pop("_id", None)
     return doc
 
@@ -309,6 +355,7 @@ async def create_scenario(input: ScenarioIn, user: dict = Depends(get_current_us
 @api_router.put("/scenarios/{sid}")
 async def update_scenario(sid: str, input: ScenarioIn, user: dict = Depends(get_current_user)):
     res = await db.scenarios.update_one({"id": sid}, {"$set": input.model_dump()})
+    _CACHE.pop("scenarios", None)
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Scenario introuvable")
     return await db.scenarios.find_one({"id": sid}, {"_id": 0})
@@ -317,23 +364,73 @@ async def update_scenario(sid: str, input: ScenarioIn, user: dict = Depends(get_
 @api_router.delete("/scenarios/{sid}")
 async def delete_scenario(sid: str, user: dict = Depends(get_current_user)):
     res = await db.scenarios.delete_one({"id": sid})
+    _CACHE.pop("scenarios", None)
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Scenario introuvable")
     return {"ok": True}
 
 
 # ---------- Uploads ----------
+ALLOWED_UPLOADS = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+    "webp": "image/webp", "gif": "image/gif", "pdf": "application/pdf",
+}
+MAX_UPLOAD = 12 * 1024 * 1024
+THUMB_WIDTHS = (200, 400, 500, 600, 800, 1000, 1200, 1600)
+_THUMBS: "OrderedDict[tuple, tuple]" = OrderedDict()
+FILE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"}
+
+
+def _downscale(data: bytes, ext: str, max_side: int = 2400) -> bytes:
+    """Limite les photos envoyees a 2400 px pour economiser stockage et bande passante."""
+    try:
+        im = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))
+        if max(im.size) <= max_side and len(data) < 1_500_000:
+            return data
+        im.thumbnail((max_side, max_side))
+        buf = io.BytesIO()
+        if ext in ("jpg", "jpeg"):
+            im.convert("RGB").save(buf, "JPEG", quality=85, optimize=True, progressive=True)
+        elif ext == "png":
+            im.save(buf, "PNG", optimize=True)
+        else:
+            im.save(buf, "WEBP", quality=85)
+        return buf.getvalue()
+    except Exception:
+        return data
+
+
+def _resize_webp(data: bytes, width: int):
+    im = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))
+    if im.width <= width:
+        return None
+    im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
+    if im.mode not in ("RGB", "RGBA"):
+        im = im.convert("RGB")
+    buf = io.BytesIO()
+    im.save(buf, "WEBP", quality=78, method=4)
+    return buf.getvalue()
+
+
 @api_router.post("/upload")
 async def upload(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "bin"
+    name = file.filename or ""
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext not in ALLOWED_UPLOADS:
+        raise HTTPException(status_code=400, detail="Format non autorise (jpg, png, webp, gif, pdf).")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="Fichier trop lourd (12 Mo maximum).")
+    ctype = ALLOWED_UPLOADS[ext]
+    if ctype.startswith("image/") and ext != "gif":
+        data = await run_in_threadpool(_downscale, data, ext)
     path = f"{APP_NAME}/uploads/{user['_id']}/{uuid.uuid4()}.{ext}"
-    data = await file.read()
-    result = put_object(path, data, file.content_type or "application/octet-stream")
+    result = await run_in_threadpool(put_object, path, data, ctype)
     await db.files.insert_one({
         "id": str(uuid.uuid4()),
         "storage_path": result["path"],
-        "original_filename": file.filename,
-        "content_type": file.content_type,
+        "original_filename": name,
+        "content_type": ctype,
         "size": result.get("size", len(data)),
         "is_deleted": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -342,58 +439,62 @@ async def upload(file: UploadFile = File(...), user: dict = Depends(get_current_
 
 
 @api_router.get("/files/{path:path}")
-async def download_file(path: str):
+async def download_file(path: str, w: int = 0):
     record = await db.files.find_one({"storage_path": path, "is_deleted": False})
     if not record:
         raise HTTPException(status_code=404, detail="File not found")
+    ctype = record.get("content_type") or "application/octet-stream"
     try:
-        data, content_type = get_object(path)
+        if w in THUMB_WIDTHS and ctype.startswith("image/") and ctype != "image/gif":
+            key = (path, w)
+            if key in _THUMBS:
+                _THUMBS.move_to_end(key)
+                data, ctype = _THUMBS[key]
+            else:
+                raw, _ = await run_in_threadpool(get_object, path)
+                small = await run_in_threadpool(_resize_webp, raw, w)
+                data, ctype = (small, "image/webp") if small else (raw, ctype)
+                _THUMBS[key] = (data, ctype)
+                while len(_THUMBS) > 80:
+                    _THUMBS.popitem(last=False)
+        else:
+            data, stored = await run_in_threadpool(get_object, path)
+            ctype = record.get("content_type") or stored
     except Exception:
         raise HTTPException(status_code=404, detail="File not found")
-    return Response(content=data, media_type=record.get("content_type") or content_type)
+    return Response(content=data, media_type=ctype, headers=FILE_HEADERS)
 
 
-# ---------- AI (Gemini) ----------
+# ---------- AI (GPT 5.4 Mini) ----------
+LLM_PROVIDER, LLM_MODEL = "openai", "gpt-5.4-mini"
 
-async def sse_stream(system_message: str, prompt: str, on_done=None):
-    full_text = ""
-    # Modèles 3.x valides à tester
-    models_to_try = ["gemini-3.8-flash", "gemini-3.7-flash","gemini-1.5-flash","gemini-3.6-flash","gemini-3.5-flash"]
 
-    for model_name in models_to_try:
-        for attempt in range(2):  # 2 essais max par modèle
-            try:
-                response = genai_client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_message,
-                    ),
-                )
-                full_text = response.text or ""
-                if full_text:
-                    break  # Succès !
-            except Exception as e:
-                logger.warning(f"Tentative {attempt + 1} sur {model_name} a échoué: {e}")
-                if attempt < 1:
-                    await asyncio.sleep(1.5)  # Petite pause avant de réessayer
-        if full_text:
-            break  # Si on a obtenu une réponse, on sort de la boucle des modèles
+def make_chat(session_id: str, system_message: str) -> LlmChat:
+    return LlmChat(
+        api_key=os.environ["EMERGENT_LLM_KEY"],
+        session_id=session_id,
+        system_message=system_message,
+    ).with_model(LLM_PROVIDER, LLM_MODEL)
 
-    if full_text:
-        yield f"data: {json.dumps({'delta': full_text})}\n\n"
-    else:
-        logger.error("Aucun modèle Gemini 3.x n'a pu répondre.")
+
+async def sse_stream(chat: LlmChat, prompt: str, on_done=None):
+    # The currently published Python SDK exposes send_message(), while the old
+    # project dependency expected a streaming API. We keep the SSE contract for
+    # the frontend by sending the completed response as one delta.
+    full: List[str] = []
+    try:
+        result = await chat.send_message(UserMessage(text=prompt))
+        full.append(result or "")
+        yield f"data: {json.dumps({'delta': result or ''})}\n\n"
+    except Exception as e:
+        logger.error(f"LLM stream error: {e}")
         yield f"data: {json.dumps({'delta': ''})}\n\n"
-
     yield "data: [DONE]\n\n"
-    if on_done and full_text:
+    if on_done:
         try:
-            await on_done(full_text)
+            await on_done("".join(full))
         except Exception as e:
             logger.error(f"Chat history store failed: {e}")
-
-
 
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
@@ -401,8 +502,8 @@ SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 class ImproveInput(BaseModel):
     field: str
-    text: str = ""
-    title: str = ""
+    text: str = Field(default="", max_length=6000)
+    title: str = Field(default="", max_length=200)
 
 
 @api_router.post("/ai/improve")
@@ -417,12 +518,13 @@ async def ai_improve(input: ImproveInput, user: dict = Depends(get_current_user)
         prompt = f"Projet : {input.title or 'sans titre'}\nType de texte : {label}\n\nTexte a ameliorer :\n{input.text}"
     else:
         prompt = f"Ecris un(e) {label} percutant(e) pour le projet « {input.title or 'sans titre'} »."
-    return StreamingResponse(sse_stream(system, prompt), media_type="text/event-stream", headers=SSE_HEADERS)
+    chat = make_chat(f"improve-{user['_id']}-{uuid.uuid4()}", system)
+    return StreamingResponse(sse_stream(chat, prompt), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 class ChatInput(BaseModel):
-    session_id: str
-    message: str
+    session_id: str = Field(min_length=6, max_length=80)
+    message: str = Field(min_length=1, max_length=600)
 
 
 def build_chat_system(content: dict, scenarios: list) -> str:
@@ -449,11 +551,12 @@ def build_chat_system(content: dict, scenarios: list) -> str:
 
 
 @api_router.post("/chat")
-async def public_chat(input: ChatInput):
+async def public_chat(input: ChatInput, request: Request):
+    rate_limit(request, "chat", 15, 600)
     if not input.message.strip():
         raise HTTPException(status_code=400, detail="Message vide")
     content = await get_content()
-    scenarios = await db.scenarios.find({}, {"_id": 0}).sort("order", 1).to_list(50)
+    scenarios = await get_scenarios()
     system = build_chat_system(content, scenarios)
     now = datetime.now(timezone.utc).isoformat()
     await db.chat_messages.insert_one(
@@ -465,6 +568,7 @@ async def public_chat(input: ChatInput):
         ("Visiteur : " if m["role"] == "user" else "Assistant : ") + m["content"] for m in history
     )
     prompt = f"{hist_txt}\nAssistant :" if hist_txt else input.message
+    chat = make_chat(f"visitor-{input.session_id}-{uuid.uuid4()}", system)
 
     async def store(answer: str):
         await db.chat_messages.insert_one(
@@ -476,8 +580,7 @@ async def public_chat(input: ChatInput):
             }
         )
 
-    return StreamingResponse(sse_stream(system, prompt, on_done=store), media_type="text/event-stream", headers=SSE_HEADERS)
-
+    return StreamingResponse(sse_stream(chat, prompt, on_done=store), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 # ---------- Misc ----------
@@ -551,8 +654,10 @@ SEED_SCENARIOS = [
 
 
 async def seed_admin():
-    admin_email = os.environ.get("ADMIN_EMAIL", "benedictioncharigufi@gmail.com").lower()
-    admin_password = os.environ.get("ADMIN_PASSWORD", "Admin1234")
+    admin_email = (os.environ.get("ADMIN_EMAIL") or "").strip().lower()
+    admin_password = os.environ.get("ADMIN_PASSWORD") or ""
+    if not admin_email or len(admin_password) < 10:
+        raise RuntimeError("ADMIN_EMAIL et ADMIN_PASSWORD (10 caracteres minimum) doivent etre definis dans .env")
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
         await db.users.insert_one({
@@ -573,6 +678,11 @@ async def seed_admin():
 async def startup():
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")
+    await db.chat_messages.create_index([("session_id", 1), ("created_at", -1)])
+    await db.files.create_index("storage_path")
+    await db.scenarios.create_index([("order", 1), ("created_at", 1)])
+    if len(os.environ.get("JWT_SECRET", "")) < 32:
+        raise RuntimeError("JWT_SECRET doit contenir au moins 32 caracteres")
     try:
         init_storage()
         logger.info("Storage initialized")
@@ -586,7 +696,15 @@ async def startup():
 
 app.include_router(api_router)
 
-
+_origins = [o for o in [os.environ.get("FRONTEND_URL"), "http://localhost:3000"] if o]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+app.add_middleware(GZipMiddleware, minimum_size=600)
 
 
 @app.on_event("shutdown")

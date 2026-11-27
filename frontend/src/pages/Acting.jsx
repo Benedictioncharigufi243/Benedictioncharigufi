@@ -4,7 +4,7 @@ import { MessageCircle, Mail, Instagram, Film, Download } from "lucide-react";
 import { LineReveal, FadeUp, PageLoader } from "@/components/Reveal";
 import { Marquee } from "@/components/Marquee";
 import { useContent } from "@/hooks/useContent";
-import { imgSrc, youtubeEmbed, waLink } from "@/lib/api";
+import { imgSrc, imgSet, youtubeEmbed, waLink } from "@/lib/api";
 
 const slug = (s) => s.toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-");
 
@@ -74,7 +74,11 @@ export default function Acting() {
                 <div className="absolute inset-0 border border-gold/40 translate-x-5 translate-y-5" aria-hidden />
                 <div className="relative overflow-hidden">
                   <motion.img
-                    src={imgSrc(content.portrait_main)}
+                    src={imgSrc(content.portrait_main, 1000)}
+                    srcSet={imgSet(content.portrait_main, [600, 800, 1000, 1600])}
+                    sizes="(min-width: 1024px) 40vw, 90vw"
+                    fetchPriority="high"
+                    decoding="async"
                     alt={`Portrait de ${content.name}`}
                     style={{ y: imgY }}
                     data-testid="acting-main-portrait"
@@ -144,7 +148,10 @@ export default function Acting() {
               >
                 <figure className="group relative overflow-hidden border border-white/5 bg-coal">
                   <img
-                    src={imgSrc(g.url)}
+                    src={imgSrc(g.url, 800)}
+                    srcSet={imgSet(g.url, [400, 800, 1200])}
+                    sizes="(min-width: 1024px) 33vw, 100vw"
+                    decoding="async"
                     alt={g.label}
                     loading="lazy"
                     data-testid={`acting-gallery-image-${i}`}

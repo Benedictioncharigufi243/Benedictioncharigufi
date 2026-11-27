@@ -77,7 +77,7 @@ export const ImageField = ({ label, value, onChange, testId }) => (
   <Field label={label}>
     <div className="flex items-start gap-4">
       {value ? (
-        <img src={imgSrc(value)} alt="" className="w-20 h-20 object-cover border border-white/10 shrink-0" />
+        <img src={imgSrc(value, 200)} alt="" loading="lazy" decoding="async" className="w-20 h-20 object-cover border border-white/10 shrink-0" />
       ) : (
         <div className="w-20 h-20 border border-dashed border-white/15 shrink-0" />
       )}

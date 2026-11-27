@@ -114,3 +114,18 @@ nécessaire. La bande démo actuelle est une vidéo placeholder : collez l'URL
 de votre vidéo YouTube non répertoriée dans Admin > Contenu acting.
 
 Support Emergent : https://emergent.sh
+
+
+================================================================================
+5. NOUVEAUTES DE CETTE VERSION (performance et securite)
+================================================================================
+- ADMIN_PASSWORD (10 caracteres minimum) et JWT_SECRET (32 minimum) sont maintenant
+  obligatoires : le backend refuse de demarrer sinon. Plus de mot de passe par defaut.
+- Photos : redimensionnees a l'envoi (2400 px max) et servies en WebP a la bonne
+  taille (?w=), avec cache navigateur d'un an. Pillow est requis (requirements.txt).
+- Une seule requete /content partagee par tout le site ; ETag + cache serveur.
+- Pages chargees a la demande, prechargees en arriere-plan ; le panneau admin n'est
+  plus telecharge par les visiteurs, qui ne font plus de requetes d'authentification.
+- Chat public limite (15 messages / 10 min / IP, 600 caracteres) ; uploads limites
+  aux images et PDF (12 Mo). Compression gzip activee.
+- Apres modification de ce code : lancez "yarn install" puis "yarn build" pour verifier.
