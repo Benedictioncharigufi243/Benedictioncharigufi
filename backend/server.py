@@ -15,7 +15,6 @@ import bcrypt
 import jwt
 import requests
 import json
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
