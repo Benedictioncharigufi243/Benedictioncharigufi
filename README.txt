@@ -59,7 +59,7 @@ backend/.env :
   ADMIN_EMAIL          Email du compte administrateur
   ADMIN_PASSWORD       Mot de passe du compte administrateur
   FRONTEND_URL         URL publique du frontend (ex: http://localhost:3000)
-  EMERGENT_LLM_KEY     Clé pour les fonctions IA (assistant d'écriture + chat)
+  EMERGENT_LLM_KEY     Clé du stockage des fichiers (photos, PDF) - obligatoire
                        et le stockage de fichiers (uploads images/PDF)
   INTEGRATION_PROXY_URL  (optionnel) URL du proxy de stockage ; par défaut
                        https://integrations.emergentagent.com
@@ -101,7 +101,7 @@ ne fait pas tourner une API Python persistante avec MongoDB sans adaptation.
 --- Étape C : vérifications après déploiement ---
 - Le site s'ouvre et communique avec l'API (les scénarios s'affichent).
 - /admin accessible avec vos identifiants ADMIN_EMAIL / ADMIN_PASSWORD.
-- Les uploads d'images et les fonctions IA nécessitent EMERGENT_LLM_KEY
+- Les uploads d'images nécessitent EMERGENT_LLM_KEY
   valide côté backend.
 
 
@@ -126,6 +126,37 @@ Support Emergent : https://emergent.sh
 - Une seule requete /content partagee par tout le site ; ETag + cache serveur.
 - Pages chargees a la demande, prechargees en arriere-plan ; le panneau admin n'est
   plus telecharge par les visiteurs, qui ne font plus de requetes d'authentification.
-- Chat public limite (15 messages / 10 min / IP, 600 caracteres) ; uploads limites
+- Uploads limites
   aux images et PDF (12 Mo). Compression gzip activee.
 - Apres modification de ce code : lancez "yarn install" puis "yarn build" pour verifier.
+
+
+================================================================================
+6. APPLICATION ANDROID (PWA + APK)
+================================================================================
+Le site est maintenant une PWA installable : manifeste, icones, service worker
+(lecture hors-ligne des pages et photos deja vues).
+
+Verifier : ouvrez le site en HTTPS dans Chrome (Android) > menu > "Installer
+l'application". Sur ordinateur : Lighthouse > categorie PWA.
+
+Generer l'APK / AAB :
+1. Deployez d'abord le site sur Vercel (HTTPS obligatoire).
+2. Allez sur https://www.pwabuilder.com, collez l'URL du site, "Start".
+3. "Package for stores" > Android > renseignez nom et identifiant de paquet
+   (ex: com.exaucebaleke.site) > Generate.
+4. Vous recevez un APK (partage direct par WhatsApp) et un AAB (Play Store,
+   25 $ une seule fois). Conservez la cle de signature fournie : elle est
+   necessaire pour toutes les mises a jour.
+5. Pour supprimer la barre d'adresse dans l'appli, publiez le fichier
+   /.well-known/assetlinks.json donne par PWABuilder dans frontend/public/.
+Le panneau /admin n'est volontairement pas mis en cache hors-ligne.
+
+
+================================================================================
+7. INTEGRATION IA SUPPRIMEE
+================================================================================
+Le chat public et les boutons d'amelioration de texte de l'admin ont ete retires
+(code frontend et backend, dependance emergentintegrations).
+ATTENTION : EMERGENT_LLM_KEY reste OBLIGATOIRE, car elle sert aussi au stockage
+des photos et PDF (/upload et /files). Ne la supprimez pas de Render.

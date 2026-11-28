@@ -10,4 +10,3 @@ python-dotenv>=1.0.1
 python-multipart>=0.0.9
 requests>=2.31.0
 Pillow>=10.3.0
-emergentintegrations==0.1.1

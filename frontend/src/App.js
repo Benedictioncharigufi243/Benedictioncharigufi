@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { MotionConfig } from "framer-motion";
@@ -15,7 +15,6 @@ const loadScenarios = () => import("@/pages/Scenarios");
 const Acting = lazy(loadActing);
 const Scenarios = lazy(loadScenarios);
 const Admin = lazy(() => import("@/pages/Admin"));
-const ChatWidget = lazy(() => import("@/components/ChatWidget").then((m) => ({ default: m.ChatWidget })));
 
 const idle = (fn) =>
   "requestIdleCallback" in window ? window.requestIdleCallback(fn, { timeout: 3000 }) : setTimeout(fn, 1500);
@@ -29,14 +28,11 @@ const ScrollToTop = () => {
 };
 
 function App() {
-  const [chatReady, setChatReady] = useState(false);
-
   useEffect(() => {
-    // Apres le premier affichage : prechargement des pages et du chat, navigation instantanee ensuite.
+    // Apres le premier affichage : prechargement des pages, navigation instantanee ensuite.
     idle(() => {
       loadActing();
       loadScenarios();
-      setChatReady(true);
     });
   }, []);
 
@@ -79,11 +75,6 @@ function App() {
             </Routes>
           </Suspense>
           <Footer />
-          {chatReady && (
-            <Suspense fallback={null}>
-              <ChatWidget />
-            </Suspense>
-          )}
           <Toaster theme="dark" position="bottom-right" />
         </BrowserRouter>
       </AuthProvider>

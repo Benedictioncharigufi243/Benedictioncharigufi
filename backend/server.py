@@ -15,9 +15,7 @@ import bcrypt
 import jwt
 import requests
 import json
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
-from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from PIL import Image, ImageOps
@@ -465,124 +463,6 @@ async def download_file(path: str, w: int = 0):
     return Response(content=data, media_type=ctype, headers=FILE_HEADERS)
 
 
-# ---------- AI (GPT 5.4 Mini) ----------
-LLM_PROVIDER, LLM_MODEL = "openai", "gpt-5.4-mini"
-
-
-def make_chat(session_id: str, system_message: str) -> LlmChat:
-    return LlmChat(
-        api_key=os.environ["EMERGENT_LLM_KEY"],
-        session_id=session_id,
-        system_message=system_message,
-    ).with_model(LLM_PROVIDER, LLM_MODEL)
-
-
-async def sse_stream(chat: LlmChat, prompt: str, on_done=None):
-    # The currently published Python SDK exposes send_message(), while the old
-    # project dependency expected a streaming API. We keep the SSE contract for
-    # the frontend by sending the completed response as one delta.
-    full: List[str] = []
-    try:
-        result = await chat.send_message(UserMessage(text=prompt))
-        full.append(result or "")
-        yield f"data: {json.dumps({'delta': result or ''})}\n\n"
-    except Exception as e:
-        logger.error(f"LLM stream error: {e}")
-        yield f"data: {json.dumps({'delta': ''})}\n\n"
-    yield "data: [DONE]\n\n"
-    if on_done:
-        try:
-            await on_done("".join(full))
-        except Exception as e:
-            logger.error(f"Chat history store failed: {e}")
-
-
-SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-
-
-class ImproveInput(BaseModel):
-    field: str
-    text: str = Field(default="", max_length=6000)
-    title: str = Field(default="", max_length=200)
-
-
-@api_router.post("/ai/improve")
-async def ai_improve(input: ImproveInput, user: dict = Depends(get_current_user)):
-    system = (
-        "Tu es un script doctor et conseiller litteraire francophone, specialiste du cinema africain. "
-        "Tu reecris le texte fourni pour le rendre plus percutant, cinematographique et vendeur, en francais. "
-        "Tu reponds uniquement avec le texte retravaille, sans preambule, sans guillemets, sans commentaire."
-    )
-    label = input.field or "texte"
-    if input.text.strip():
-        prompt = f"Projet : {input.title or 'sans titre'}\nType de texte : {label}\n\nTexte a ameliorer :\n{input.text}"
-    else:
-        prompt = f"Ecris un(e) {label} percutant(e) pour le projet « {input.title or 'sans titre'} »."
-    chat = make_chat(f"improve-{user['_id']}-{uuid.uuid4()}", system)
-    return StreamingResponse(sse_stream(chat, prompt), media_type="text/event-stream", headers=SSE_HEADERS)
-
-
-class ChatInput(BaseModel):
-    session_id: str = Field(min_length=6, max_length=80)
-    message: str = Field(min_length=1, max_length=600)
-
-
-def build_chat_system(content: dict, scenarios: list) -> str:
-    specs = content.get("specs") or {}
-    specs_txt = "; ".join(
-        f"{g} : " + ", ".join(f"{k} {v}" for k, v in rows) for g, rows in specs.items()
-    )
-    scen_txt = "\n".join(
-        f"- {s.get('title')} ({s.get('genre')}, {s.get('format')}, {s.get('status')}) : {s.get('pitch', '')}"
-        for s in scenarios
-    )
-    links = content.get("links") or {}
-    return (
-        f"Tu es l'assistant virtuel du site officiel de {content.get('name')}, acteur et scenariste base a "
-        f"{content.get('location_line')}. Tu reponds en francais, de facon concise et chaleureuse, aux "
-        "directeurs de casting, realisateurs et producteurs. "
-        f"Profil : {content.get('intro', '')} {content.get('bio', '')} "
-        f"Caracteristiques : {specs_txt}. "
-        f"Projets de scenarios :\n{scen_txt}\n"
-        f"Pour toute demande concrete (booking, traitement complet, lecture de scenario), oriente vers WhatsApp : "
-        f"+{links.get('whatsapp', '243990604665')} ou l'email {links.get('email', '')}. "
-        "Ne reponds qu'aux questions liees a l'artiste, a sa carriere et a ses projets. Maximum 120 mots."
-    )
-
-
-@api_router.post("/chat")
-async def public_chat(input: ChatInput, request: Request):
-    rate_limit(request, "chat", 15, 600)
-    if not input.message.strip():
-        raise HTTPException(status_code=400, detail="Message vide")
-    content = await get_content()
-    scenarios = await get_scenarios()
-    system = build_chat_system(content, scenarios)
-    now = datetime.now(timezone.utc).isoformat()
-    await db.chat_messages.insert_one(
-        {"session_id": input.session_id, "role": "user", "content": input.message, "created_at": now}
-    )
-    history = await db.chat_messages.find({"session_id": input.session_id}, {"_id": 0}).sort("created_at", -1).to_list(8)
-    history.reverse()
-    hist_txt = "\n".join(
-        ("Visiteur : " if m["role"] == "user" else "Assistant : ") + m["content"] for m in history
-    )
-    prompt = f"{hist_txt}\nAssistant :" if hist_txt else input.message
-    chat = make_chat(f"visitor-{input.session_id}-{uuid.uuid4()}", system)
-
-    async def store(answer: str):
-        await db.chat_messages.insert_one(
-            {
-                "session_id": input.session_id,
-                "role": "assistant",
-                "content": answer,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-
-    return StreamingResponse(sse_stream(chat, prompt, on_done=store), media_type="text/event-stream", headers=SSE_HEADERS)
-
-
 # ---------- Misc ----------
 @api_router.get("/")
 async def root():
@@ -678,7 +558,6 @@ async def seed_admin():
 async def startup():
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")
-    await db.chat_messages.create_index([("session_id", 1), ("created_at", -1)])
     await db.files.create_index("storage_path")
     await db.scenarios.create_index([("order", 1), ("created_at", 1)])
     if len(os.environ.get("JWT_SECRET", "")) < 32:

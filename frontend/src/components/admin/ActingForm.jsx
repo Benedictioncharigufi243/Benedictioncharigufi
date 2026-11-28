@@ -2,7 +2,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { TextInput, TextArea, ImageField, PdfField } from "./Fields";
-import { AiButton } from "./AiButton";
 
 const SPEC_GROUPS = ["Mensurations", "Apparence", "Langues", "Accents", "Skills", "Mobilité"];
 
@@ -60,11 +59,9 @@ export const ActingForm = ({ content }) => {
         <div className="mt-6 space-y-6">
           <div>
             <TextArea label="Texte d'introduction" value={form.intro} onChange={set("intro")} testId="admin-intro-input" />
-            <AiButton field="introduction" title={form.name} getText={() => form.intro} onResult={set("intro")} testId="admin-intro-ai" />
           </div>
           <div>
             <TextArea label="Bio" value={form.bio} onChange={set("bio")} rows={5} testId="admin-bio-input" />
-            <AiButton field="biographie" title={form.name} getText={() => form.bio} onResult={set("bio")} testId="admin-bio-ai" />
           </div>
         </div>
       </section>

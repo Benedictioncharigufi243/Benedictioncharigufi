@@ -3,7 +3,6 @@ import { toast } from "sonner";
 import { Plus, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { TextInput, TextArea, ImageField, PdfField } from "./Fields";
-import { AiButton } from "./AiButton";
 
 const EMPTY = {
   title: "",
@@ -58,15 +57,12 @@ export const ScenarioForm = ({ initial, onSaved, onCancel }) => {
       </div>
       <div>
         <TextArea label="Pitch (logline)" value={form.pitch} onChange={set("pitch")} rows={2} testId="scenario-form-pitch" />
-        <AiButton field="pitch" title={form.title} getText={() => form.pitch} onResult={set("pitch")} testId="scenario-form-pitch-ai" />
       </div>
       <div>
         <TextArea label="Synopsis (5-8 lignes)" value={form.synopsis} onChange={set("synopsis")} rows={6} testId="scenario-form-synopsis" />
-        <AiButton field="synopsis" title={form.title} getText={() => form.synopsis} onResult={set("synopsis")} testId="scenario-form-synopsis-ai" />
       </div>
       <div>
         <TextArea label="Note d'intention" value={form.note_intention} onChange={set("note_intention")} rows={3} testId="scenario-form-note" />
-        <AiButton field="note d'intention" title={form.title} getText={() => form.note_intention} onResult={set("note_intention")} testId="scenario-form-note-ai" />
       </div>
       <div className="grid md:grid-cols-2 gap-6">
         <ImageField label="Affiche / poster" value={form.poster} onChange={set("poster")} testId="scenario-form-poster" />
